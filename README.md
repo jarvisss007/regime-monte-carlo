@@ -60,6 +60,41 @@ of both facts with just a 3×3 transition matrix and empirical sampling.
 
 ![Fan chart](figures/fig2_fanchart.png)
 
+## Part II: Hidden Markov regimes (the Baum-Welch study)
+
+`src/hmm.py` implements a Gaussian **Hidden** Markov Model from scratch —
+scaled forward-backward, Baum-Welch EM, Viterbi decoding, and an online
+filter. This is the lineage of Leonard Baum (Jim Simons' first Renaissance
+partner): the regime is treated as unobservable and inferred from returns
+alone. Correctness is tested by recovering *known* hidden states from
+synthetic data (>85% Viterbi accuracy) before touching market data.
+
+**What the HMM discovers** (3 states, S&P 500 1999–2018): its calm state
+drifts *up* (+9 bp/day, 9% vol), its turbulent state drifts *down*
+(−12 bp/day, 42% vol) — the leverage effect, learned from prices with no
+volatility feature supplied. Expected regime durations: 30–50 trading days.
+
+![HMM states](figures/fig5_hmm_states.png)
+
+**Does it add out-of-sample value?** (`run_hmm_study.py`: expanding-window
+walk-forward, quarterly refits, 3,770 OOS days, QLIKE loss,
+Diebold-Mariano tests)
+
+| next-day vol forecaster | QLIKE (lower = better) | DM t vs EWMA |
+|---|---:|---:|
+| **EWMA(0.94), RiskMetrics 1994** | **−8.435** | — |
+| 21-day rolling | −8.378 | 4.1 |
+| HMM predictive mixture | −8.357 | 2.0 |
+| Rule-based regime vol | −8.350 | 2.7 |
+
+**The honest headline: the one-parameter 1994 EWMA significantly beats the
+Baum-Welch machinery at next-day volatility forecasting.** A 10%-vol-target
+overlay (net of costs) improves Sharpe over buy-and-hold for *every*
+forecaster (0.38 → up to 0.51) and roughly halves drawdown — but the simplest
+forecasters do it best. Hidden Markov models earn their keep in *description*
+(economically meaningful states) and *simulation* (realistic tails), not in
+short-horizon forecasting. Sophistication is not edge.
+
 ## Honest limitations
 
 - Regime classification uses full-sample vol terciles (fine for describing
