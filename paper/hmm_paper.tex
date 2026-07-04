@@ -1,5 +1,5 @@
 \documentclass[11pt]{article}
-\usepackage[margin=1.1in]{geometry}
+\usepackage[margin=1.05in]{geometry}
 \usepackage{amsmath,amssymb}
 \usepackage{booktabs}
 \usepackage[round]{natbib}
@@ -8,14 +8,15 @@
 \usepackage{microtype}
 
 \title{Do Hidden Markov Regimes Add Out-of-Sample Value?\\
-\large Point forecasts, densities, and tail risk across equities and
-commodities}
+\large Separating fat tails from hidden states in volatility forecasting,
+density calibration, and tail risk, 1999--2026}
 \author{Anupam Prabhugouda Patil\thanks{apati077@ucr.edu. Code, data and every
 number in this paper are reproducible from
 \url{https://github.com/jarvisss007/regime-monte-carlo}
-(\texttt{run\_full\_study.py}); the test suite re-verifies the
-implementations---including recovery of known hidden states and known GARCH
-dynamics on synthetic data---in CI on every commit.}}
+(\texttt{run\_full\_study\_v2.py}); a CI-run test suite re-verifies the
+implementations---including recovery of known hidden states, known
+fat-tailed states, and known GARCH dynamics from synthetic data---on every
+commit.}}
 \date{July 2026}
 
 \begin{document}
@@ -24,146 +25,167 @@ dynamics on synthetic data---in CI on every commit.}}
 \begin{abstract}
 \noindent Hidden Markov models (HMMs) occupy a storied place in quantitative
 finance: the Baum--Welch algorithm was co-invented by Leonard Baum, Jim
-Simons' first partner at Renaissance Technologies. We ask a deliberately
-sceptical question: on daily data, does a Gaussian HMM add
-\emph{out-of-sample} value over standard volatility filters? We evaluate a
-from-scratch three-state HMM against rule-based regimes, RiskMetrics EWMA,
-rolling variance, and GARCH(1,1) on three assets (S\&P~500 and NASDAQ,
-1999--2018; WTI crude, 1986--2019), in an expanding-window walk-forward with
-quarterly refits and 3{,}770--7{,}060 out-of-sample days per asset, scoring
-\emph{three distinct objects}: variance point forecasts (QLIKE), the full
-predictive density (log score), and 1\% Value-at-Risk (Kupiec and
-Christoffersen backtests). The answer depends on what is scored. For point
-variance, smooth conditional-variance recursions win: GARCH(1,1) is best on
-all three assets and EWMA second, both significantly ahead of the HMM on
-equities (Diebold--Mariano $t\approx2$). For densities, the HMM closes the
-gap---statistically indistinguishable from EWMA on equities---and wins
-outright on the fat-tailed commodity ($t=-3.1$). For tail risk the ranking
-inverts decisively: every Gaussian forecaster materially over-breaches a
-1\% VaR (up to 2.6\% hit rates), while the HMM mixture has the lowest breach
-rate on all three assets and is the \emph{only} model anywhere with
-statistically correct coverage (WTI, Kupiec $p=0.38$). Descriptively, the
-HMM discovers the leverage effect unsupervised---its calm state drifts up,
-its turbulent state drifts down. Volatility-targeting overlays raise Sharpe
-ratios on the equity indices but no improvement survives a stationary
-block-bootstrap test. The conclusion is a division of labour: hidden-state
-mixtures are \emph{risk} models---tails, densities, description---while
-one-parameter recursions remain better \emph{point} forecasters.
-Sophistication is not edge; it is insurance.
+Simons' first partner at Renaissance Technologies. We ask whether the
+machinery pays its way out of sample---and, when it does, \emph{which
+ingredient} is doing the work: the hidden Markov dynamics, or merely the fat
+tails of the implied mixture distribution. We evaluate seven models
+(Gaussian and Student-$t$ HMMs, rule-based volatility regimes, RiskMetrics
+EWMA, rolling variance, and GARCH(1,1) with Normal and Student-$t$
+innovations) on the S\&P~500 and NASDAQ (1999--2026) and WTI crude
+(1986--2026), in an expanding-window walk-forward covering 5{,}600--8{,}900
+out-of-sample days per asset that include the 2008 crisis, COVID-2020, and
+2022. Models are scored on variance point forecasts (QLIKE, with
+Diebold--Mariano tests and Hansen--Lunde--Nason model confidence sets), full
+predictive densities (log score, Berkowitz calibration), and tail risk (VaR
+at three levels with Kupiec/Christoffersen backtests; expected-shortfall
+calibration ratios). Three findings emerge. \emph{First}, for variance point
+forecasts GARCH(1,1) dominates and the HMMs trail significantly---regime
+discreteness costs accuracy that no emission distribution repairs.
+\emph{Second}, for tail risk the decisive ingredient is the tail, not the
+hidden state: at a 1\% VaR the Student-$t$ HMM and GARCH-$t$ are the two
+best-calibrated models on every asset and the only two whose coverage is
+statistically correct on WTI, while every Gaussian model---including the
+Gaussian HMM's own mixture---over-breaches; expected-shortfall ratios show
+the same split (fat-tailed models 1.00--1.11, Gaussian models 1.11--1.25).
+\emph{Third}, crisis windows reverse the picture in an instructive way: in
+the 2008 collapse the HMMs breached a 1\% VaR on 7--8\% of S\&P days---their
+volatility ceiling, estimated on pre-crisis history, could not reach
+2008 levels---while recursive-variance models adapted within days. Hidden
+states retain genuine descriptive value (they discover the leverage effect
+unsupervised) and deliver the best full-density calibration on the
+commodity; but the apparent tail-risk superiority of regime mixtures in
+Gaussian-only comparisons is shown to come from their tails, not their
+Markov dynamics. Volatility-targeting overlays improve equity Sharpe ratios
+under every forecaster yet no improvement survives a stationary-bootstrap
+test. Sophistication is not edge; the useful sophistication is a
+fat-tailed innovation, and it is available for one extra parameter.
 \end{abstract}
 
 \section{Introduction}
 The romance of regime-switching models in finance begins with a
 biographical fact: before founding Renaissance Technologies, Jim Simons
-partnered with Leonard Baum, co-inventor of the algorithm
-\citep{baum1970} that made hidden Markov models estimable. The intellectual
-bet---that markets, like speech, are driven by unobservable states that can
-be inferred from noisy observations---has attracted researchers ever since
+partnered with Leonard Baum, co-inventor of the algorithm \citep{baum1970}
+that made hidden Markov models estimable. The intellectual bet---that
+markets, like speech, are driven by unobservable states inferable from
+noisy observations---has attracted researchers ever since
 \citep{hamilton1989, ryden1998, ang2002, guidolin2007, nystrup2018}.
 
 This paper asks the question an allocator (or a sceptical PhD committee)
-would ask: \emph{does the machinery pay its way out of sample?} And it
-insists on a distinction the literature often blurs: ``forecasting
-volatility'' is not one task but several. A model may forecast the
-\emph{level} of tomorrow's variance poorly while describing the
-\emph{shape} of tomorrow's return distribution well---and for a risk
-manager the shape, especially the left tail, is the object that matters.
-We therefore score every model on three progressively richer objects:
-variance point forecasts under QLIKE loss \citep{patton2011}, the full
-one-day-ahead predictive density under the logarithmic score, and 1\%
-Value-at-Risk under formal coverage and independence backtests
-\citep{kupiec1995, christoffersen1998}.
+would ask---\emph{does the machinery pay its way out of sample?}---and
+pushes it one step further than the usual horse race. A hidden-Markov
+mixture differs from a one-line variance recursion in two separable ways:
+its \emph{dynamics} (a discrete persistent chain rather than a smooth
+filter) and its \emph{distribution} (a mixture, hence fat-tailed, rather
+than a Gaussian). Comparing a Gaussian HMM only against Gaussian filters
+confounds the two. We therefore field a $2\times2$-style design: Gaussian
+and Student-$t$ HMMs against GARCH(1,1) with Normal and Student-$t$
+innovations, alongside three simpler baselines, so that every claim about
+``regimes'' can be checked against a matched-tail alternative.
 
-Our contribution is not a new model but an honest accounting, in the spirit
-of \citet{hansen2005}, who asked whether anything beats a GARCH(1,1). On
-the point-forecast leg our answer agrees with theirs; on the tail-risk leg
-it reverses. That reversal---sophistication losing the forecasting race
-while winning the risk race---is the paper's central finding.
+We also insist that ``forecasting volatility'' is not one task. A model may
+forecast the \emph{level} of tomorrow's variance poorly while describing
+the \emph{shape} of tomorrow's distribution well; for a risk manager the
+shape---especially the left tail---is the object that matters. Every model
+is scored on three progressively richer objects: variance point forecasts
+under QLIKE loss \citep{patton2011}, one-day-ahead densities under the log
+score with Berkowitz calibration tests \citep{berkowitz2001}, and Value-at-
+Risk at three levels with coverage and independence backtests
+\citep{kupiec1995, christoffersen1998}, supplemented by expected-shortfall
+calibration ratios. Point- and density-forecast comparisons are
+disciplined by Diebold--Mariano tests \citep{diebold1995} and
+Hansen--Lunde--Nason model confidence sets \citep{hansen2011}.
+
+Our contribution is an honest accounting in the spirit of
+\citet{hansen2005}, extended to a decomposition: when regime models look
+good, is it the regimes or the tails? The answer, on twenty-seven years of
+equity data and forty of commodity data, is: the tails.
 
 \section{Models}
-\subsection{Gaussian hidden Markov model}
-Daily returns $r_t$ are modelled as draws from one of $K$ Gaussian
-emission distributions $\mathcal{N}(\mu_k,\sigma_k^2)$, selected by a latent
-first-order Markov chain $s_t$ with transition matrix $A$. Parameters
-$(\pi, A, \mu, \sigma)$ are estimated by Baum--Welch
-(expectation--maximisation over scaled forward--backward recursions),
-implemented from scratch; the most likely state path is decoded by Viterbi.
-Initialisation is deterministic (quantile splits of $|r_t|$), and states are
-relabelled by ascending $\sigma_k$. Correctness is verified on synthetic
-data with \emph{known} hidden states before any market data is touched: the
-implementation recovers the true path with $>85\%$ Viterbi accuracy and the
-true $\sigma_k$ within 15\%. Our baseline uses $K=3$; Section~\ref{sec:k}
-varies $K$.
+\subsection{Hidden Markov models}
+Daily returns $r_t$ are modelled as draws from one of $K=3$ emission
+distributions selected by a latent first-order Markov chain with transition
+matrix $A$. The \textbf{Gaussian HMM} uses
+$\mathcal{N}(\mu_k,\sigma_k^2)$ emissions, estimated by Baum--Welch
+(EM over scaled forward--backward recursions) implemented from scratch;
+states are decoded by Viterbi and relabelled by ascending risk.
+The \textbf{Student-$t$ HMM} replaces each emission with a location-scale
+$t$: $r_t \sim \mu_k + \sigma_k\, t(\nu_k)$, estimated by the classical
+normal/inverse-gamma EM augmentation (per-observation tail weights
+$u_{tk}=(\nu_k+1)/(\nu_k+z_{tk}^2)$), with $\nu_k$ updated by profile
+likelihood. Fat tails \emph{inside} each regime let the model separate
+``the regime got riskier'' from ``a single outlier landed''.
 
-For out-of-sample use we maintain the filtered distribution
-$p_t = P(s_t \mid r_{1:t})$ recursively. With predictive mixture weights
-$q = p_t A$, the one-day-ahead density is the mixture
-$\sum_k q_k\,\mathcal{N}(\mu_k,\sigma_k^2)$; its variance is
-\begin{equation}
-\widehat{\text{Var}}_t(r_{t+1}) = \sum_k q_k(\sigma_k^2 + \mu_k^2)
-- \Big(\sum_k q_k \mu_k\Big)^2,
-\end{equation}
-and its $\alpha$-quantile (for VaR) is obtained by bisection on the mixture
-CDF. The HMM is thus the only model in the comparison whose predictive
-density is non-Gaussian.
+Both implementations are validated on synthetic data with known parameters
+before touching market data: the Gaussian version recovers a known hidden
+path with $>85\%$ Viterbi accuracy; the $t$ version correctly identifies
+which synthetic state is fat-tailed ($\hat\nu$ ordering) and reproduces its
+own quantiles with correct empirical coverage.
+
+For out-of-sample use we maintain filtered probabilities
+$p_t = P(s_t\mid r_{1:t})$ recursively; with predictive weights $q=p_tA$
+the one-day density is the mixture $\sum_k q_k f_k$, its variance follows
+from mixture moments, its VaR by bisection on the mixture CDF, and its
+expected shortfall in closed form from component partial expectations.
 
 \subsection{Comparators}
-\textbf{Rule-based regimes:} days classified calm/normal/turbulent by
-terciles of trailing 21-day realised volatility (tercile edges from training
-data only); the forecast is the training-sample variance of the current
-regime's return pool---the observable-state analogue of the HMM.
-\textbf{EWMA:} $\hat v_{t+1} = 0.94\,\hat v_t + 0.06\,r_t^2$
-\citep{riskmetrics1996}.
-\textbf{Rolling:} 21-day trailing variance.
-\textbf{GARCH(1,1):} $\hat v_{t+1} = \omega + \alpha r_t^2 + \beta \hat
-v_t$ with zero mean, estimated by maximum likelihood at each refit
-\citep{bollerslev1986}; between refits the recursion runs with fixed
-parameters. (Our estimator recovers known $(\alpha,\beta)$ on simulated
-GARCH data within tight tolerances; this is part of the test suite.)
-The four comparators produce Gaussian predictive densities
-$\mathcal{N}(0,\hat v_{t+1})$; note that for Gaussian densities the log
-score is an affine transform of QLIKE, so their density ranking must match
-their QLIKE ranking---only the HMM can genuinely differ across the two.
+\textbf{Rule-based regimes}: calm/normal/turbulent by terciles of trailing
+21-day realised volatility (edges from training data only); forecast = the
+current regime's training-pool variance. The observable-state analogue of
+the HMM. \textbf{EWMA}: $\hat v_{t+1}=0.94\hat v_t + 0.06 r_t^2$
+\citep{riskmetrics1996}. \textbf{Rolling}: 21-day trailing variance.
+\textbf{GARCH(1,1)-Normal} and \textbf{GARCH(1,1)-$t$}
+\citep{bollerslev1986}: $\hat v_{t+1}=\omega+\alpha r_t^2+\beta\hat v_t$
+with Normal or standardised-$t(\nu)$ innovations, estimated by maximum
+likelihood at each refit; between refits the recursion runs with fixed
+parameters. Density, VaR and ES for the $t$ variant use the scaled-$t$
+closed forms. For Gaussian-density models the log score is an affine
+transform of QLIKE, so their density ranking must equal their QLIKE
+ranking; only the mixture and $t$ models can genuinely differ across
+scoring rules.
 
 \section{Data and protocol}
-Assets are daily closes bundled with the open-source \texttt{arch} package
-(no vendor access): S\&P~500 and NASDAQ composite (January 1999--December
-2018) and WTI crude spot (1986--2019). The first 1{,}260 trading days form
-the initial estimation window; all models are re-estimated every 63 days on
-an expanding window; filters and recursions update daily. Every forecast of
-day $t{+}1$ uses only information through day $t$. This yields 3{,}770
-out-of-sample days for each equity index and 7{,}060 for WTI. Point
-forecasts are scored by QLIKE, $L_t = \log\hat v_t + r_t^2/\hat v_t$,
-robust to noisy volatility proxies \citep{patton2011}; densities by the log
-score; forecast differences tested by Diebold--Mariano statistics with a
-Bartlett/HAC variance at five lags \citep{diebold1995}. VaR calibration is
-tested by Kupiec's proportion-of-failures likelihood ratio
-\citep{kupiec1995} and Christoffersen's independence test
-\citep{christoffersen1998}.
+Data are daily closes: S\&P~500 and NASDAQ composite, January 1999--June
+2026 (6{,}913 returns each; Yahoo Finance), and WTI crude spot, January
+1986--June 2026 (10{,}189 returns; FRED \texttt{DCOILWTICO}); the exact
+series used are cached in the repository. The first 1{,}260 days form the
+initial window; all seven models are re-estimated every 63 trading days on
+an expanding window; filters and recursions update daily; every forecast of
+day $t{+}1$ uses only information through day $t$. This yields 5{,}653
+out-of-sample days per equity index (2004--2026: covering 2008, COVID-2020,
+and 2022) and 8{,}929 for WTI (1991--2026). Statistical machinery: QLIKE
+$L_t=\log\hat v_t + r_t^2/\hat v_t$; Diebold--Mariano with Bartlett/HAC
+variance (5 lags); model confidence sets at the 10\% level by stationary
+block bootstrap \citep{hansen2011, politis1994}; Kupiec
+proportion-of-failures and Christoffersen independence tests at VaR levels
+$\{1\%, 2.5\%, 5\%\}$; ES calibration as the ratio of mean realised loss
+beyond VaR to mean predicted ES on breach days (1 = calibrated); Berkowitz
+LR test on probability integral transforms.
 
 \section{Results}
-\subsection{What the HMM discovers}
-Fitted to the full S\&P sample, the three states are not mere volatility
-buckets (Table~\ref{tab:states}): mean returns fall monotonically as
-volatility rises, from a calm state combining a $+9.2$\,bp daily drift with
-8.7\% annualised volatility to a turbulent state combining $-11.5$\,bp with
-42.2\%. The model was never shown a volatility feature or a sign
-asymmetry---it inferred the leverage effect from raw returns, consistent
-with \citet{ryden1998}. States are highly persistent (expected durations
-32--49 trading days) and the chain never transits directly between calm and
-turbulent: panic arrives, and recedes, through the intermediate state.
+\subsection{What the hidden states discover}
+Fitted to the full 1999--2026 S\&P sample, the Gaussian HMM's states remain
+economically interpretable rather than mere volatility buckets
+(Table~\ref{tab:states}): the calm state combines a $+11.0$\,bp daily drift
+with 8.8\% annualised volatility; the turbulent state $-15.2$\,bp with
+45.6\%. The leverage effect is discovered unsupervised, consistent with
+\citet{ryden1998}. The chain still never jumps directly between calm and
+turbulent. The $t$-HMM adds a sharper observation: conditional on the
+regime, returns remain fat-tailed---$\hat\nu\approx7$ in the calm state and
+$\hat\nu\approx6$ in the turbulent state---so regime switching alone does
+not exhaust the non-Gaussianity of daily returns. This foreshadows the
+tail-risk results below.
 
 \begin{table}[t]
 \centering
-\caption{Three-state Gaussian HMM, S\&P 500 daily returns, 1999--2018.}
+\caption{Three-state Gaussian HMM, S\&P 500 daily returns, 1999--2026.}
 \label{tab:states}
 \begin{tabular}{lrrrr}
 \toprule
 state & $\mu_k$ (bp/day) & $\sigma_k$ (ann.) & self-persistence & E[duration] \\
 \midrule
-calm      & $+9.2$  & 8.7\%  & 0.979 & 48.5 days \\
-normal    & $-1.8$  & 18.5\% & 0.973 & 37.4 days \\
-turbulent & $-11.5$ & 42.2\% & 0.969 & 31.8 days \\
+calm      & $+11.0$ & 8.8\%  & 0.974 & 39.1 days \\
+normal    & $-0.9$  & 18.7\% & 0.967 & 30.4 days \\
+turbulent & $-15.2$ & 45.6\% & 0.959 & 24.5 days \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -171,32 +193,29 @@ turbulent & $-11.5$ & 42.2\% & 0.969 & 31.8 days \\
 \begin{figure}[t]
 \centering
 \includegraphics[width=\textwidth]{../figures/fig5_hmm_states.png}
-\caption{Top: S\&P 500 (log scale) coloured by decoded hidden state.
-Bottom: smoothed probability of the turbulent state.}
+\caption{Top: S\&P 500 (log scale), 1999--2026, coloured by decoded hidden
+state. Bottom: smoothed probability of the turbulent state.}
 \label{fig:states}
 \end{figure}
 
-\subsection{Point forecasts: smooth recursions win}
-Table~\ref{tab:qlike} reports QLIKE across all assets. The ordering is
-strikingly stable: GARCH(1,1) first on all three assets---significantly
-ahead of even the EWMA on both equity indices ($t=-2.1,\,-2.2$)---EWMA
-second, the HMM third, and the piecewise-constant forecasters (rolling,
-rule-based) last, decisively so ($t$ up to 9.3). The HMM's deficit to the
-EWMA is significant on the S\&P ($t=2.0$), marginal on NASDAQ ($t=1.8$),
-and insignificant on WTI ($t=0.9$).
-
-The mechanism is structural. Regime forecasts are piecewise-constant:
-within a regime the forecast barely moves; across the boundary it jumps
-between a small number of levels. Conditional variance itself evolves
-continuously, and the geometric weighting of GARCH/EWMA tracks that
-evolution day by day, while a three-state mixture must express all
-variation through shifts in $q$.
+\subsection{Variance point forecasts: recursions win, tails don't help}
+Table~\ref{tab:qlike} reports QLIKE. GARCH is best on all three assets, and
+the innovation distribution is nearly irrelevant to the point forecast
+(GARCH-N vs GARCH-$t$: indistinguishable on WTI, GARCH-N marginally ahead
+on the equities)---as expected, since QLIKE scores only the variance path.
+Both HMMs trail GARCH-$t$ significantly (DM $t=2.3$--$4.3$), and the
+$t$-emissions do not repair the gap: discreteness, not the emission
+distribution, is the binding constraint. The piecewise-constant forecasters
+(rolling, rule-based) are decisively worst. Model confidence sets tell a
+sample-dependent story: on NASDAQ the MCS retains \emph{only} GARCH-N; on
+the S\&P and WTI---where the out-of-sample span includes 2008 and COVID
+volatility of unprecedented scale---the data cannot separate the top six,
+and only the rule-based forecaster is eliminated.
 
 \begin{table}[t]
 \centering
-\caption{Variance point forecasts: QLIKE (lower is better) and
-Diebold--Mariano $t$ against the EWMA benchmark (positive $=$ EWMA more
-accurate). Out-of-sample days: 3{,}770 (S\&P, NASDAQ), 7{,}060 (WTI).}
+\caption{Variance point forecasts: QLIKE (lower is better); DM $t$ against
+GARCH-$t$ (positive $=$ GARCH-$t$ more accurate); $\star$ = in the 10\% MCS.}
 \label{tab:qlike}
 \begin{tabular}{lrrrrrr}
 \toprule
@@ -204,31 +223,38 @@ accurate). Out-of-sample days: 3{,}770 (S\&P, NASDAQ), 7{,}060 (WTI).}
 & \multicolumn{2}{c}{WTI} \\
 forecaster & QLIKE & $t$ & QLIKE & $t$ & QLIKE & $t$ \\
 \midrule
-GARCH(1,1)        & $\mathbf{-8.462}$ & $-2.1$ & $\mathbf{-8.099}$ & $-2.2$ & $\mathbf{-6.723}$ & $-1.4$ \\
-EWMA(0.94)        & $-8.435$ & ---    & $-8.082$ & ---    & $-6.714$ & --- \\
-HMM mixture       & $-8.357$ & $2.0$  & $-8.056$ & $1.8$  & $-6.705$ & $0.9$ \\
-21-day rolling    & $-8.378$ & $4.1$  & $-8.031$ & $4.1$  & $-6.675$ & $5.7$ \\
-rule-based regimes& $-8.350$ & $2.7$  & $-8.031$ & $3.6$  & $-6.600$ & $9.3$ \\
+GARCH-N     & $\mathbf{-8.394}^\star$ & $-2.1$ & $\mathbf{-7.966}^\star$ & $-2.9$ & $-6.659^\star$ & $0.1$ \\
+GARCH-$t$   & $-8.390^\star$ & ---    & $-7.963$ & ---    & $\mathbf{-6.659}^\star$ & --- \\
+EWMA(0.94)  & $-8.357^\star$ & $3.9$  & $-7.942$ & $3.8$  & $-6.639^\star$ & $3.9$ \\
+HMM-Normal  & $-8.313^\star$ & $3.3$  & $-7.928$ & $4.3$  & $-6.612^\star$ & $2.6$ \\
+HMM-$t$     & $-8.301^\star$ & $3.3$  & $-7.944$ & $2.6$  & $-6.611^\star$ & $2.3$ \\
+21d rolling & $-8.301^\star$ & $5.4$  & $-7.896$ & $5.2$  & $-6.603^\star$ & $6.2$ \\
+rule-based  & $-8.253$ & $5.1$  & $-7.880$ & $6.8$  & $-6.439$ & $4.6$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\subsection{Densities: the mixture closes the gap}
-Scoring the full predictive density (Table~\ref{tab:logscore}) changes the
-HMM's standing. Against the EWMA it is statistically indistinguishable on
-both equity indices ($t=0.9,\,0.3$)---the fat-tailed mixture recovers on
-density exactly what its variance point forecast loses---and on WTI, the
-fattest-tailed asset in the panel, it is significantly \emph{better}
-($t=-3.1$), overtaking GARCH for first place. For the Gaussian comparators
-the density ranking is mechanically identical to the QLIKE ranking (the log
-score of a Gaussian is affine in QLIKE); the HMM is the only model able to
-improve its rank between the two tables, and it does.
+\subsection{Densities: GARCH-$t$ first, $t$-HMM second}
+On the log score (Table~\ref{tab:logscore}) the fat-tailed pair pulls away
+from everything Gaussian. GARCH-$t$ is the sole member of the model
+confidence set on the S\&P and WTI and shares a two-member set with the
+$t$-HMM on NASDAQ. The $t$-HMM is second everywhere---ahead of every
+Gaussian model including GARCH-N---and the Gaussian HMM beats the Gaussian
+filters on WTI only. Berkowitz calibration tests sharpen the split: on WTI
+the two HMMs deliver the best-calibrated densities in the study
+($p=0.87$ Gaussian, $p=0.95$ $t$; GARCH-N $p=0.48$, GARCH-$t$ $p=0.16$;
+all simple filters rejected at $p<10^{-10}$), whereas on the equity
+indices---whose out-of-sample span includes two once-a-generation
+crises---\emph{every} model's density is rejected. Nothing in this
+comparison set fully describes equity returns through 2008 and 2020; the
+fat-tailed models merely fail least.
 
 \begin{table}[t]
 \centering
 \caption{Predictive density: mean log score (higher is better); DM $t$
-against EWMA on the negative log-score loss (negative $=$ model beats
-EWMA).}
+against GARCH-$t$ on negative log score; $\star$ = in the 10\% MCS.
+Bottom row: Berkowitz calibration $p$-value on WTI (equity densities are
+rejected for all models).}
 \label{tab:logscore}
 \begin{tabular}{lrrrrrr}
 \toprule
@@ -236,132 +262,192 @@ EWMA).}
 & \multicolumn{2}{c}{WTI} \\
 forecaster & score & $t$ & score & $t$ & score & $t$ \\
 \midrule
-GARCH(1,1)        & $\mathbf{3.312}$ & $-2.1$ & $\mathbf{3.131}$ & $-2.2$ & $2.443$ & $-1.4$ \\
-EWMA(0.94)        & $3.298$ & ---    & $3.122$ & ---    & $2.438$ & --- \\
-HMM mixture       & $3.280$ & $0.9$  & $3.120$ & $0.3$  & $\mathbf{2.460}$ & $\mathbf{-3.1}$ \\
-21-day rolling    & $3.270$ & $4.1$  & $3.096$ & $4.1$  & $2.419$ & $5.7$ \\
-rule-based regimes& $3.256$ & $2.7$  & $3.096$ & $3.6$  & $2.381$ & $9.3$ \\
+GARCH-$t$   & $\mathbf{3.301}^\star$ & --- & $\mathbf{3.077}^\star$ & --- & $\mathbf{2.440}^\star$ & --- \\
+HMM-$t$     & $3.281$ & $3.4$ & $3.073^\star$ & $1.4$ & $2.431$ & $3.4$ \\
+GARCH-N     & $3.278$ & $5.4$ & $3.064$ & $5.3$ & $2.410$ & $5.9$ \\
+HMM-Normal  & $3.260$ & $3.6$ & $3.059$ & $4.9$ & $2.416$ & $2.9$ \\
+EWMA(0.94)  & $3.260$ & $5.1$ & $3.052$ & $5.5$ & $2.401$ & $5.9$ \\
+21d rolling & $3.231$ & $5.9$ & $3.029$ & $5.9$ & $2.383$ & $7.2$ \\
+rule-based  & $3.207$ & $6.8$ & $3.021$ & $8.6$ & $2.301$ & $5.5$ \\
+\midrule
+Berkowitz $p$ (WTI) & & & & & \multicolumn{2}{r}{HMM-$t$ .95, HMM-N .87,}\\
+& & & & & \multicolumn{2}{r}{G-N .48, G-$t$ .16, rest $<10^{-10}$}\\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\subsection{Tail risk: the ranking inverts}
-Table~\ref{tab:var} contains the paper's sharpest result. At a 1\% VaR
-target, every Gaussian forecaster over-breaches on every asset---hit rates
-of 1.5\%--2.6\%, i.e.\ 50\%--160\% more tail events than promised, with
-Kupiec rejections at $p<10^{-4}$ throughout. The HMM mixture has the lowest
-breach rate on all three assets (1.56\%, 1.62\%, 1.10\%) and on WTI it is
-the \emph{only} model in the entire study whose coverage cannot be rejected
-(Kupiec $p=0.38$; Christoffersen independence $p=0.19$). The economic
-reading: a Gaussian tail hung on even the best point forecast of variance
-is the wrong shape, and the error is first-order for risk management. The
-mixture's overweighting of the turbulent component buys exactly the tail
-mass that Gaussian models lack. The HMM is not perfect---on the S\&P its
-breaches cluster (Christoffersen $p=0.002$), betraying regime
-transitions detected with a lag---but it dominates the alternatives on
-calibration everywhere.
+\subsection{Tail risk: fat tails, not hidden states}
+Table~\ref{tab:var} is the paper's central evidence. At the 1\% level the
+two Student-$t$ models are the best calibrated on every asset, and on WTI
+they are the only two whose coverage passes the Kupiec test (GARCH-$t$
+hit rate 1.00\%, $p=0.98$; HMM-$t$ 1.09\%, $p=0.42$). Every
+Gaussian-density model over-breaches everywhere---\emph{including the
+Gaussian HMM}, whose mixture provides some tail mass but not enough. On
+the equity indices, whose evaluation span contains 2008 and 2020, no model
+attains correct 1\% coverage, but the ordering is unchanged: $t$-tails
+first (hit rates 1.4\%--1.7\%), Gaussian mixtures next, Gaussian
+recursions last (up to 2.7\%---nearly triple the promised breach rate).
+At the 5\% level, where tail shape matters less, most models pass and the
+differences fade, confirming that the 1\% results are about distribution
+tails rather than variance levels. Expected-shortfall calibration tells
+the same story with severity instead of frequency: on breach days the
+fat-tailed pair's ES ratios sit at 1.00--1.11 across assets while the
+Gaussian models' realised losses run 11--25\% beyond their predicted ES.
+
+The decomposition is now clean. In a Gaussian-only comparison (as in an
+earlier version of this study), the Gaussian HMM appears to be the best
+tail model available and one might credit the hidden states. Field a
+matched-tail benchmark and the credit moves: \textbf{one extra degree of
+freedom---$\nu$---in a one-line GARCH recursion buys tail calibration
+equal to (on WTI, slightly better than) the full Baum--Welch apparatus.}
+The hidden states are not what fixes the tail; the tail is.
 
 \begin{table}[t]
 \centering
-\caption{1\% one-day VaR backtests. Hit rate should equal 1\%. K-$p$:
-Kupiec coverage $p$-value (higher is better; $\geq0.05$ means calibration
-cannot be rejected). C-$p$: Christoffersen independence $p$-value.}
+\caption{VaR backtests: empirical breach rates (\%) at nominal 1\% and 5\%
+levels. Bold = Kupiec coverage not rejected at 5\% significance.
+OOS days: 5{,}653 (equities), 8{,}929 (WTI).}
 \label{tab:var}
-\begin{tabular}{lrrrrrrrrr}
+\begin{tabular}{lrrrrrr}
 \toprule
-& \multicolumn{3}{c}{S\&P 500} & \multicolumn{3}{c}{NASDAQ}
-& \multicolumn{3}{c}{WTI} \\
-forecaster & hit\% & K-$p$ & C-$p$ & hit\% & K-$p$ & C-$p$ & hit\% & K-$p$ & C-$p$ \\
+& \multicolumn{2}{c}{S\&P 500} & \multicolumn{2}{c}{NASDAQ}
+& \multicolumn{2}{c}{WTI} \\
+forecaster & 1\% & 5\% & 1\% & 5\% & 1\% & 5\% \\
 \midrule
-HMM mixture  & $\mathbf{1.56}$ & .001 & .002 & $\mathbf{1.62}$ & .000 & .361
-             & $\mathbf{1.10}$ & $\mathbf{.384}$ & .187 \\
-GARCH(1,1)   & 1.75 & .000 & .143 & 1.78 & .000 & .155 & 1.47 & .000 & .714 \\
-EWMA(0.94)   & 2.23 & .000 & .437 & 1.96 & .000 & .250 & 1.74 & .000 & .248 \\
-rule-based   & 2.44 & .000 & .032 & 1.86 & .000 & .192 & 2.12 & .000 & .006 \\
-21-day rolling & 2.60 & .000 & .017 & 2.47 & .000 & .648 & 2.05 & .000 & .565 \\
+HMM-$t$     & 1.40 & $\mathbf{5.41}$ & 1.38 & $\mathbf{5.55}$ & $\mathbf{1.09}$ & $\mathbf{5.25}$ \\
+GARCH-$t$   & 1.47 & $\mathbf{5.27}$ & 1.68 & $\mathbf{5.43}$ & $\mathbf{1.00}$ & $\mathbf{5.23}$ \\
+HMM-Normal  & 1.59 & $\mathbf{5.38}$ & 1.82 & $\mathbf{5.73}$ & 1.22 & $\mathbf{5.38}$ \\
+GARCH-N     & 1.86 & $\mathbf{5.11}$ & 1.86 & $\mathbf{5.25}$ & 1.51 & $\mathbf{4.64}$ \\
+EWMA(0.94)  & 2.28 & 5.80 & 2.07 & 5.93 & 1.85 & $\mathbf{5.39}$ \\
+21d rolling & 2.65 & 6.30 & 2.42 & 6.51 & 2.09 & 5.85 \\
+rule-based  & 2.62 & $\mathbf{5.41}$ & 1.98 & $\mathbf{4.97}$ & 2.27 & $\mathbf{5.48}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Crisis windows: where the state ceiling binds}
+Sub-sampling the 1\%-VaR breaches to three stress windows exposes the
+HMMs' characteristic failure mode (Table~\ref{tab:crisis}). In the second
+half of 2008 on the S\&P, the Gaussian and $t$ HMMs breached on 7.9\% and
+6.7\% of days respectively---seven times their nominal rate---while
+GARCH-$t$ breached on 1.2\% and even the humble EWMA on 2.0\%. The
+mechanism is structural: an HMM's worst-case one-day distribution is
+bounded by its most turbulent state, whose $\sigma_k$ was estimated on
+\emph{pre-2008} history; when realised volatility blew through every level
+in the training sample, the discrete state ceiling bound, whereas
+recursive-variance models scale without limit and adapted within days. By
+COVID-2020 the HMMs had a 2008 in their training window and their breach
+rates (4.0\%) fell in line with the pack; in 2022 every model was
+calibrated. The same pattern appears in the WTI COVID window (which
+contains the negative-price episode): recursions 3.2\%, HMMs 5.6--6.4\%.
+Regime models learn new regimes only after living through them.
+
+\begin{table}[t]
+\centering
+\caption{1\% VaR breach rates (\%) inside stress windows, S\&P 500 and
+WTI. GFC: Jul 2008--Jun 2009 (252 days). COVID: Feb--Jul 2020
+($\approx$126 days). 2022: calendar year.}
+\label{tab:crisis}
+\begin{tabular}{lrrrr}
+\toprule
+& \multicolumn{3}{c}{S\&P 500} & WTI \\
+forecaster & GFC & COVID & 2022 & COVID \\
+\midrule
+HMM-Normal  & 7.9 & 4.0 & 1.2 & 6.4 \\
+HMM-$t$     & 6.7 & 4.0 & 0.8 & 5.6 \\
+rule-based  & 8.3 & 7.9 & 1.6 & 12.0 \\
+EWMA(0.94)  & 2.0 & 5.6 & 1.6 & 4.8 \\
+21d rolling & 2.0 & 5.6 & 2.0 & 4.0 \\
+GARCH-N     & 2.4 & 4.0 & 1.2 & 3.2 \\
+GARCH-$t$   & 1.2 & 3.2 & 0.8 & 3.2 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \subsection{State-count sensitivity}\label{sec:k}
-Re-running the S\&P walk-forward with $K\in\{2,3,4\}$ improves both scores
-monotonically in $K$: QLIKE moves from $-8.317$ ($K{=}2$) to $-8.357$
-($K{=}3$) to $-8.429$ ($K{=}4$), the last within a whisker of the EWMA's
-$-8.435$; the log score rises from 3.253 to 3.280 to 3.316, at $K{=}4$
-exceeding both EWMA (3.298) and GARCH (3.312). A finer state grid
-approximates a continuous volatility process better, converging toward the
-smooth-recursion benchmarks---which clarifies that the three-state model's
-point-forecast deficit is a discretisation cost, not a flaw of the
-hidden-state idea.
+Re-running the S\&P walk-forward with $K\in\{2,3,4,5,6,8\}$ Gaussian
+states (refit every 126 days) improves both QLIKE and log score
+monotonically in $K$, with the gains plateauing beyond $K\approx5$:
+QLIKE moves from $-8.249$ ($K{=}2$) through $-8.344$ ($K{=}4$) to
+$-8.383$ ($K{=}8$), closing roughly nine-tenths of the distance to the
+GARCH benchmark ($-8.394$) but never crossing it. This is consistent with
+the discretisation interpretation: a finer state grid approximates a
+continuous volatility process ever better, converging toward---without
+reaching---the smooth-recursion frontier. The three-state model's
+point-forecast deficit is a resolution cost, not evidence against latent
+structure per se; but no resolution within reach makes the latent chain a
+\emph{better} point forecaster than the recursion it approximates.
 
-\subsection{Does it cash out? Volatility targeting, honestly tested}
-Finally we ask whether any of this matters for a simple investor via a
-10\%-annualised-vol-target overlay, $w_t = \min(1,
-\sigma_{\text{tgt}}/\hat\sigma_t)$, net of 2\,bps per side on turnover
-\citep{moreira2017}. On the equity indices every forecaster's overlay
-raises the Sharpe ratio (S\&P: 0.38 buy-and-hold $\to$ 0.42--0.51; NASDAQ:
-0.48 $\to$ 0.55--0.64) and roughly halves maximum drawdown (S\&P $-57\%\to
--25\%$; NASDAQ $-56\%\to-22\%$). But a stationary block-bootstrap test of
-the Sharpe difference \citep{politis1994} rejects nothing: the smallest
-$p$-value in the panel is 0.10, and on WTI the overlays fail to beat
-buy-and-hold at all. Forecast-accuracy differences between overlay drivers
-are second-order relative to the sampling variation of Sharpe ratios over
-two decades. We report this as an honest null: volatility targeting
-\emph{looks} valuable, its drawdown reduction is large and mechanical, but
-its Sharpe improvement on this sample does not clear conventional
-significance---and it certainly provides no wedge for sophisticated
-volatility models over simple ones.
+\subsection{Volatility targeting, honestly tested}
+Finally, a 10\%-vol-target overlay ($w_t=\min(1,
+\sigma_{\text{tgt}}/\hat\sigma_t)$, 2\,bps per side on turnover;
+\citealp{moreira2017}) improves the Sharpe ratio over buy-and-hold on both
+equity indices under \emph{every} forecaster (S\&P: 0.54 $\to$ 0.58--0.67;
+NASDAQ: 0.63 $\to$ 0.66--0.76) and cuts maximum drawdowns roughly in half
+(S\&P $-57\%\to-25\%$; NASDAQ $-56\%\to-20\%$); on WTI (buy-and-hold
+drawdown $-94\%$) the overlays reduce drawdown by 50+ points but lower the
+Sharpe. A stationary-bootstrap test of each Sharpe difference rejects
+nothing (minimum $p=0.09$, rule-based on NASDAQ). The drawdown reduction
+is mechanical and large; the Sharpe improvement remains statistically
+unproven at this sample size---and offers no wedge for sophisticated
+forecasters over simple ones.
 
 \section{Discussion}
-The three scoring rules assemble into one coherent picture. Conditional
-variance is nearly a continuous-path process; models whose forecasts move
-smoothly with every observation (GARCH, EWMA) track its level best, and no
-amount of hidden-state elegance changes that---consistent with
-\citet{hansen2005}, and now shown to extend to HMMs across asset classes.
-But the \emph{conditional distribution} of returns is not Gaussian, and
-here the mixture structure earns its keep: matching Gaussian benchmarks on
-equity densities, beating them on commodity densities, and delivering the
-only correctly calibrated 1\% VaR in the study. The hidden-state model is
-best understood not as a forecaster but as a risk model---a machine for
-getting the tail right---and, descriptively, as an unsupervised discoverer
-of economically meaningful structure (the leverage effect, regime
-persistence, the no-direct-jump topology of market stress). The
-Renaissance lesson survives in amended form: the mathematics of Baum
-genuinely sees structure that simple filters do not; converting that
-structure into point-forecast dominance---let alone into edge---is another
-matter entirely.
+The design separates two ingredients that regime-switching folklore
+bundles together, and they land on opposite sides of the ledger.
+\emph{The tail is first-order.} Moving from Normal to Student-$t$
+innovations---one parameter---repairs VaR calibration for GARCH and
+sharpens it for the HMM; no Gaussian model of any structural
+sophistication achieves what either $t$ model achieves. \emph{The hidden
+state is second-order for prediction.} It costs accuracy at the point
+forecast (discreteness), adds little to tail calibration beyond what its
+mixture tails already provide, and imposes a crisis-specific fragility:
+state ceilings estimated on tranquil history cannot span an unprecedented
+shock, precisely when a risk model earns its keep. What the hidden state
+buys instead is \emph{understanding}: unsupervised discovery of the
+leverage effect, persistent interpretable regimes, the no-direct-jump
+topology of market stress, and---on the commodity---the best-calibrated
+full density in the study. For a risk desk, the practical ranking is
+GARCH-$t$ first for production, $t$-HMM close behind if regime
+interpretation is wanted; for a researcher, the lesson is that any claimed
+benefit of regime dynamics should be benchmarked against a matched-tail
+alternative before the dynamics get the credit. The Renaissance lesson
+survives in amended form: Baum's mathematics genuinely sees structure that
+filters do not---but seeing structure and forecasting from it are
+different trades.
 
 \section{Limitations}
-(i)~Gaussian emissions; Student-$t$ emissions would likely sharpen both
-density and VaR results and might close the remaining coverage gap on
-equities. (ii)~$K{\leq}4$; Section~\ref{sec:k} suggests larger $K$
-converges toward smooth filters, a trade-off worth mapping fully.
-(iii)~Quarterly refits are a compute compromise. (iv)~Three assets, daily
-frequency, one VaR level; intraday data and multi-asset joint modelling are
-the natural extensions. (v)~The overlay analysis uses one target and one
-cost assumption; its null should be read as absence of evidence at this
-sample size, not proof of absence.
+(i) The crisis-window analysis is descriptive (three windows, small breach
+counts). (ii) $K\le8$ and hard state assignments at refit boundaries;
+regime-switching GARCH (persistent states \emph{with} within-state
+recursions) is the natural hybrid our results motivate, and the obvious
+next model to field. (iii) Quarterly refits are a compute compromise.
+(iv) One-day horizon and long-only overlays; multi-day distributions and
+derivatives applications may weight the HMM's full-path simulation
+abilities more heavily. (v) Yahoo/FRED daily closes; results at intraday
+frequencies may differ.
 
 \section{Conclusion}
-Evaluated honestly and out of sample, a Gaussian hidden Markov model on
-daily returns is a mediocre point forecaster, a competitive density
-forecaster, the best tail-risk model in its comparison set, and a genuinely
-insightful descriptive device. The one-parameter EWMA and GARCH(1,1) remain
-the right tools for predicting tomorrow's variance level; the hidden-state
-mixture is the right tool when the question is how bad tomorrow can get.
-What one concludes about ``sophistication'' in quantitative finance
-depends entirely on the scoring rule---which is, perhaps, the most
-practical lesson this study has to offer.
+Evaluated honestly, out of sample, across assets and across three scoring
+rules, hidden Markov models on daily returns are: significantly worse
+point forecasters than GARCH; competitive density forecasters when given
+$t$ emissions (and the best-calibrated densities on the commodity);
+excellent tail-risk models---but no better than a GARCH-$t$ whose single
+extra parameter supplies the same fat tail without the state ceiling that
+failed in 2008. The regime machinery's durable contribution is
+descriptive. The durable practical lesson is cheaper than the machinery:
+model the tail, and let the variance be recursive.
 
 \section*{Reproducibility}
-\texttt{python run\_full\_study.py} reproduces Tables 2--5 and the overlay
-results; \texttt{python run\_hmm\_study.py} reproduces Table~1;
-\texttt{python plots\_hmm.py} reproduces Figure~1; \texttt{pytest} (17
-tests) re-verifies the HMM, GARCH, and backtest implementations against
-synthetic data with known properties, in CI on every commit. Data ship
-with the \texttt{arch} package; no vendor access is required.
+\texttt{python run\_full\_study\_v2.py} reproduces every table
+(per-asset checkpoints in \texttt{results/v2\_*.csv});
+\texttt{run\_ksweep\_v2.py} reproduces Section~\ref{sec:k};
+\texttt{plots\_hmm.py} reproduces Figure~\ref{fig:states}. The cached
+input data ship in \texttt{data/}. \texttt{pytest} (20 tests) verifies the
+HMM, $t$-HMM, GARCH, VaR/ES and calibration-test implementations against
+synthetic data with known properties, in CI on every commit.
 
-\begin{thebibliography}{15}
+\begin{thebibliography}{18}
 \bibitem[Ang \& Bekaert(2002)]{ang2002}
 Ang, A., \& Bekaert, G. (2002). International asset allocation with
 regime shifts. \emph{Review of Financial Studies}, 15(4), 1137--1187.
@@ -370,6 +456,11 @@ regime shifts. \emph{Review of Financial Studies}, 15(4), 1137--1187.
 Baum, L.~E., Petrie, T., Soules, G., \& Weiss, N. (1970). A maximization
 technique occurring in the statistical analysis of probabilistic functions
 of Markov chains. \emph{Annals of Mathematical Statistics}, 41(1), 164--171.
+
+\bibitem[Berkowitz(2001)]{berkowitz2001}
+Berkowitz, J. (2001). Testing density forecasts, with applications to risk
+management. \emph{Journal of Business \& Economic Statistics}, 19(4),
+465--474.
 
 \bibitem[Bollerslev(1986)]{bollerslev1986}
 Bollerslev, T. (1986). Generalized autoregressive conditional
@@ -397,6 +488,10 @@ nonstationary time series and the business cycle. \emph{Econometrica},
 Hansen, P.~R., \& Lunde, A. (2005). A forecast comparison of volatility
 models: does anything beat a GARCH(1,1)? \emph{Journal of Applied
 Econometrics}, 20(7), 873--889.
+
+\bibitem[Hansen et al.(2011)]{hansen2011}
+Hansen, P.~R., Lunde, A., \& Nason, J.~M. (2011). The model confidence
+set. \emph{Econometrica}, 79(2), 453--497.
 
 \bibitem[Kupiec(1995)]{kupiec1995}
 Kupiec, P.~H. (1995). Techniques for verifying the accuracy of risk

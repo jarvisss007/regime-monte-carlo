@@ -12,13 +12,13 @@ import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
-import arch.data.sp500
+import pandas as pd
 from hmm import baum_welch, forward_backward
 from regimes import STATE_NAMES
 
 os.makedirs("figures", exist_ok=True)
 
-px = arch.data.sp500.load()["Adj Close"].dropna()
+px = pd.read_csv("data/equities_1999_2026.csv", parse_dates=["date"], index_col="date")["SP500"].dropna()
 r = px.pct_change().dropna()
 fit = baum_welch(r.values, n_states=3)
 _, gamma, _, _ = forward_backward(r.values, fit["pi"], fit["A"],
