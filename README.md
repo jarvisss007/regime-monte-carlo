@@ -1,5 +1,8 @@
 # Regime-Switching Monte Carlo
 
+**📄 Working paper: [Do Hidden Markov Regimes Add Out-of-Sample Value?](paper/hmm_paper.pdf)**
+— every number reproduces from this repository
+
 **Why does the textbook market simulation understate crash risk — and what does
 it take to fix it?** This project answers with a Markov-chain regime model,
 compared head-to-head against geometric Brownian motion on 20 years of real

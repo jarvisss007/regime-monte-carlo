@@ -1,0 +1,317 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1.1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage[round]{natbib}
+\usepackage{graphicx}
+\usepackage[hidelinks]{hyperref}
+\usepackage{microtype}
+
+\title{Do Hidden Markov Regimes Add Out-of-Sample Value?\\
+\large Unsupervised state discovery, volatility forecasting, and
+risk-targeting on the S\&P~500}
+\author{Anupam Prabhugouda Patil\thanks{apati077@ucr.edu. Code, data and every
+number in this paper are reproducible from
+\url{https://github.com/jarvisss007/regime-monte-carlo}
+(\texttt{run\_hmm\_study.py}); the test suite re-verifies key results in CI.}}
+\date{July 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent Hidden Markov models (HMMs) occupy a storied place in quantitative
+finance: the Baum--Welch algorithm was co-invented by Leonard Baum, Jim
+Simons' first partner at Renaissance Technologies. We ask a deliberately
+sceptical question: on daily S\&P~500 data, does a Gaussian HMM add
+\emph{out-of-sample} value over embarrassingly simple alternatives? We find a
+split verdict. As a \emph{descriptive} device the HMM is impressive: fitted
+unsupervised on raw returns, it recovers three economically meaningful
+states---a calm state that drifts up ($+9$\,bp/day, 9\% annualised
+volatility) and a turbulent state that drifts down ($-12$\,bp/day, 42\%
+volatility)---thereby discovering the leverage effect without being shown a
+volatility feature. As a \emph{forecasting} device, however, it disappoints:
+in an expanding-window walk-forward over 3{,}770 out-of-sample days, the
+one-parameter RiskMetrics EWMA significantly outperforms the HMM's
+predictive mixture at next-day volatility forecasting (QLIKE loss,
+Diebold--Mariano $t=2.0$), and also beats rule-based regime forecasts and
+rolling variance. A 10\%-volatility-targeting overlay net of costs improves
+the Sharpe ratio over buy-and-hold for \emph{every} forecaster (0.38 to as
+high as 0.51) and roughly halves maximum drawdown---but the simplest
+forecasters deliver the largest gains. The value lies in the idea of
+volatility targeting, not in sophisticated volatility estimation.
+Sophistication, by itself, is not edge.
+\end{abstract}
+
+\section{Introduction}
+The romance of regime-switching models in finance begins with a
+biographical fact: before founding Renaissance Technologies, Jim Simons
+partnered with Leonard Baum, co-inventor of the algorithm
+\citep{baum1970} that made hidden Markov models estimable. The intellectual
+bet---that markets, like speech, are driven by unobservable states that can
+be inferred from noisy observations---has attracted researchers ever since
+\citep{hamilton1989, ryden1998, ang2002, guidolin2007, nystrup2018}.
+
+This paper asks the question an allocator (or a sceptical PhD committee)
+would ask: \emph{does the machinery pay its way out of sample?} We compare a
+from-scratch Gaussian HMM against three deliberately humble alternatives on
+twenty years of daily S\&P~500 data, under a protocol designed to preclude
+hindsight: expanding-window walk-forward estimation, quarterly refits, an
+online filter so every forecast at time $t$ uses only information through
+$t$, robust loss functions, and formal forecast-comparison tests.
+
+Our contribution is not a new model but an honest accounting, in the spirit
+of \citet{hansen2005}, who famously asked whether anything beats a
+GARCH(1,1). Our answer parallels theirs: for next-day volatility, nothing in
+our regime-switching toolkit beats a 1994-vintage exponentially weighted
+moving average \citep{riskmetrics1996}.
+
+\section{Models}
+\subsection{Gaussian hidden Markov model}
+Daily returns $r_t$ are modelled as draws from one of $K=3$ Gaussian
+emission distributions $\mathcal{N}(\mu_k,\sigma_k^2)$, selected by a latent
+first-order Markov chain $s_t$ with transition matrix $A$. Parameters
+$(\pi, A, \mu, \sigma)$ are estimated by Baum--Welch
+(expectation--maximisation over the scaled forward--backward recursions),
+implemented from scratch in \texttt{src/hmm.py}; the most likely state path
+is decoded with the Viterbi algorithm. Initialisation is deterministic
+(quantile splits of $|r_t|$), and states are relabelled by ascending
+$\sigma_k$ so state~0 is always the calmest. Correctness is verified on
+synthetic data with \emph{known} hidden states before any market data is
+touched: the implementation recovers the true path with $>85\%$ Viterbi
+accuracy and the true $\sigma_k$ within 15\%.
+
+For out-of-sample prediction we maintain the filtered distribution
+$p_t = P(s_t \mid r_{1:t})$ with a recursive filter. The predictive variance
+of tomorrow's return under the mixture $q = p_t A$ is
+\begin{equation}
+\widehat{\text{Var}}_t(r_{t+1}) \;=\; \sum_k q_k(\sigma_k^2 + \mu_k^2)
+\;-\; \Big(\sum_k q_k \mu_k\Big)^2 .
+\end{equation}
+
+\subsection{Comparators}
+\textbf{Rule-based regimes.} Days are classified calm/normal/turbulent by
+terciles of trailing 21-day realised volatility (edges estimated on training
+data only); the forecast is the training-sample variance of the current
+regime's return pool. This is the observable-state analogue of the HMM.
+\textbf{EWMA.} $\hat v_{t+1} = 0.94\,\hat v_t + 0.06\, r_t^2$, the
+RiskMetrics standard \citep{riskmetrics1996}. \textbf{Rolling.} 21-day
+trailing variance.
+
+\section{Data and protocol}
+Data are daily S\&P~500 adjusted closes, January 1999--December 2018
+($T=5{,}030$ returns), as bundled in the open-source \texttt{arch} package;
+no vendor access is required. The first 1{,}260 days (five years) form the
+initial training window. The HMM and the rule-based regime parameters are
+re-estimated every 63 trading days on an expanding window; between refits
+the HMM filter is updated daily. Every forecast of day $t{+}1$ volatility is
+made strictly with information through day $t$. This yields 3{,}770
+out-of-sample forecasts per method.
+
+Forecasts are scored with the QLIKE loss
+$L_t = \log \hat v_t + r_t^2/\hat v_t$, which is robust to noisy volatility
+proxies \citep{patton2011}. Differences are tested with Diebold--Mariano
+statistics using a Bartlett/HAC variance with five lags
+\citep{diebold1995}.
+
+\section{Results}
+\subsection{What the HMM discovers}
+Table~\ref{tab:states} reports the full-sample fit. The states are not mere
+volatility buckets: mean returns fall monotonically as volatility rises. The
+calm state combines a $+9.2$\,bp daily drift with 8.7\% annualised
+volatility; the turbulent state combines a $-11.5$\,bp drift with 42.2\%
+volatility. The model was never shown a volatility feature or a sign
+asymmetry---it inferred the leverage effect from raw returns, consistent
+with \citet{ryden1998}. All states are highly persistent (expected durations
+of 32--49 trading days), and the chain never transits directly between calm
+and turbulent: panic arrives, and recedes, through the intermediate state.
+Decoded states agree with the rule-based labels on 60\% of days, so the
+hidden states substantially---but not entirely---rediscover observable
+volatility regimes.
+
+\begin{table}[t]
+\centering
+\caption{Three-state Gaussian HMM, S\&P 500 daily returns, 1999--2018.}
+\label{tab:states}
+\begin{tabular}{lrrrr}
+\toprule
+state & $\mu_k$ (bp/day) & $\sigma_k$ (ann.) & self-persistence & E[duration] \\
+\midrule
+calm      & $+9.2$  & 8.7\%  & 0.979 & 48.5 days \\
+normal    & $-1.8$  & 18.5\% & 0.973 & 37.4 days \\
+turbulent & $-11.5$ & 42.2\% & 0.969 & 31.8 days \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{../figures/fig5_hmm_states.png}
+\caption{Top: S\&P 500 (log scale) coloured by decoded hidden state.
+Bottom: smoothed probability of the turbulent state.}
+\label{fig:states}
+\end{figure}
+
+\subsection{The forecasting shoot-out}
+Table~\ref{tab:qlike} contains the paper's central result. The RiskMetrics
+EWMA achieves the best (lowest) QLIKE, and the Diebold--Mariano tests reject
+equal accuracy against every regime-based alternative: against the HMM
+predictive mixture at $t=2.0$, against rule-based regime volatility at
+$t=2.7$, and against rolling variance at $t=4.1$. A one-parameter filter
+from 1996 beats the Baum--Welch machinery at its supposed home game.
+
+The mechanism is not mysterious. Regime forecasts are, by construction,
+piecewise-constant: within a regime the forecast barely moves, and at regime
+boundaries it jumps between a small number of levels. Volatility itself
+evolves continuously. The EWMA's geometric weighting tracks that continuous
+evolution day by day, while the HMM must express all variation through
+shifts in a three-point mixture.
+
+\begin{table}[t]
+\centering
+\caption{Next-day volatility forecasting, 3{,}770 out-of-sample days
+(1999--2018 sample, first five years reserved for initial estimation).
+QLIKE: lower is better. DM $t$: positive values mean the EWMA is
+significantly more accurate.}
+\label{tab:qlike}
+\begin{tabular}{lrr}
+\toprule
+forecaster & QLIKE & DM $t$ vs EWMA \\
+\midrule
+EWMA(0.94), RiskMetrics & $\mathbf{-8.435}$ & --- \\
+21-day rolling variance & $-8.378$ & 4.12 \\
+HMM predictive mixture  & $-8.357$ & 2.05 \\
+rule-based regime vol   & $-8.350$ & 2.73 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Does forecasting quality cash out? The vol-target overlay}
+Following the logic of volatility-managed portfolios \citep{moreira2017}, we
+run a 10\%-annualised-volatility-target overlay: the position in the index is
+$w_t = \min\!\big(1, \sigma_{\text{tgt}}/\widehat{\sigma}_t\big)$, with
+2\,bps per side charged on turnover. Table~\ref{tab:overlay} shows that
+\emph{every} forecaster's overlay improves on buy-and-hold's Sharpe ratio
+(0.38) and roughly halves its $-57\%$ maximum drawdown---and that the
+ranking follows forecast accuracy: the simplest forecasters (rolling, EWMA,
+Sharpe 0.51--0.52) beat the HMM overlay (0.42). Each overlay realises close
+to its 10\% volatility target, so the comparison is at matched risk.
+
+\begin{table}[t]
+\centering
+\caption{10\% vol-target overlay on the S\&P 500, net of 2 bps/side,
+same 3{,}770 out-of-sample days.}
+\label{tab:overlay}
+\begin{tabular}{lrrrr}
+\toprule
+overlay driven by & ann.\ return & Sharpe & max drawdown & realised vol \\
+\midrule
+rolling variance & 4.8\% & \textbf{0.51} & $-25.8\%$ & 10.0\% \\
+EWMA(0.94)       & 4.7\% & \textbf{0.51} & $-25.1\%$ & 9.9\% \\
+rule-based regimes & 4.6\% & 0.49 & $-29.9\%$ & 10.2\% \\
+HMM predictive mixture & 3.7\% & 0.42 & $-29.7\%$ & 9.7\% \\
+\midrule
+buy \& hold (no overlay) & 5.5\% & 0.38 & $-56.8\%$ & 18.3\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Discussion}
+The verdict is a clean split along the description/prediction boundary.
+As a descriptive and generative device the HMM earns its reputation: it
+discovers economically interpretable states unsupervised, and (as shown in
+the companion simulation study in the same repository) regime-conditional
+resampling reproduces the fat tails and volatility clustering that
+Gaussian diffusion models miss entirely. As a short-horizon forecasting
+device it does not: the filter-plus-mixture prediction is dominated by
+exponential smoothing, echoing \citet{hansen2005} in a regime-switching
+key. For the practitioner the actionable finding is
+Table~\ref{tab:overlay}: volatility targeting is robustly valuable, and it
+does not require---indeed is mildly hurt by---sophisticated state
+inference. For the researcher, the finding is a caution against equating
+model elegance with predictive content.
+
+\section{Limitations}
+(i)~One asset and one frequency; the HMM's relative standing may differ for
+multi-asset problems, longer horizons, or applications that exploit the
+full predictive \emph{distribution} rather than its variance.
+(ii)~Gaussian emissions with $K=3$; richer emissions (Student-$t$) or
+model-selected $K$ could narrow the gap. (iii)~Quarterly refits are a
+compute compromise; daily refits are conceptually identical but were not
+run. (iv)~We did not include a GARCH(1,1) comparator; given
+\citet{hansen2005}, we expect it to perform near the EWMA, which is its
+integrated special case. (v)~The overlay's improvement over buy-and-hold is
+economic rather than formally tested; our significance claims concern
+forecast accuracy only.
+
+\section{Conclusion}
+Fitted honestly and evaluated out of sample, a Gaussian hidden Markov model
+on S\&P~500 returns is a very good storyteller and a mediocre forecaster.
+The states it discovers are real and economically meaningful; the forecasts
+it produces are significantly worse than a one-parameter EWMA; and the
+robust practical value in this exercise---volatility targeting---is
+available to anyone with a rolling window. The Renaissance lesson, at least
+at this scale and with this data, is not that hidden-state models print
+money; it is that disciplined evaluation separates what a model
+\emph{reveals} from what it can \emph{predict}.
+
+\section*{Reproducibility}
+\texttt{python run\_hmm\_study.py} reproduces every table;
+\texttt{python plots\_hmm.py} reproduces Figure~\ref{fig:states};
+\texttt{pytest} re-verifies the implementation (including known-state
+recovery on synthetic data) and runs in CI on every commit. Data ship with
+the \texttt{arch} package.
+
+\begin{thebibliography}{12}
+\bibitem[Ang \& Bekaert(2002)]{ang2002}
+Ang, A., \& Bekaert, G. (2002). International asset allocation with
+regime shifts. \emph{Review of Financial Studies}, 15(4), 1137--1187.
+
+\bibitem[Baum et al.(1970)]{baum1970}
+Baum, L.~E., Petrie, T., Soules, G., \& Weiss, N. (1970). A maximization
+technique occurring in the statistical analysis of probabilistic functions
+of Markov chains. \emph{Annals of Mathematical Statistics}, 41(1), 164--171.
+
+\bibitem[Diebold \& Mariano(1995)]{diebold1995}
+Diebold, F.~X., \& Mariano, R.~S. (1995). Comparing predictive accuracy.
+\emph{Journal of Business \& Economic Statistics}, 13(3), 253--263.
+
+\bibitem[Guidolin \& Timmermann(2007)]{guidolin2007}
+Guidolin, M., \& Timmermann, A. (2007). Asset allocation under multivariate
+regime switching. \emph{Journal of Economic Dynamics and Control}, 31(11),
+3503--3544.
+
+\bibitem[Hamilton(1989)]{hamilton1989}
+Hamilton, J.~D. (1989). A new approach to the economic analysis of
+nonstationary time series and the business cycle. \emph{Econometrica},
+57(2), 357--384.
+
+\bibitem[Hansen \& Lunde(2005)]{hansen2005}
+Hansen, P.~R., \& Lunde, A. (2005). A forecast comparison of volatility
+models: does anything beat a GARCH(1,1)? \emph{Journal of Applied
+Econometrics}, 20(7), 873--889.
+
+\bibitem[Moreira \& Muir(2017)]{moreira2017}
+Moreira, A., \& Muir, T. (2017). Volatility-managed portfolios.
+\emph{Journal of Finance}, 72(4), 1611--1644.
+
+\bibitem[Nystrup et al.(2018)]{nystrup2018}
+Nystrup, P., Madsen, H., \& Lindstr\"om, E. (2018). Dynamic portfolio
+optimization across hidden market regimes. \emph{Quantitative Finance},
+18(1), 83--95.
+
+\bibitem[Patton(2011)]{patton2011}
+Patton, A.~J. (2011). Volatility forecast comparison using imperfect
+volatility proxies. \emph{Journal of Econometrics}, 160(1), 246--256.
+
+\bibitem[RiskMetrics(1996)]{riskmetrics1996}
+J.P.~Morgan/Reuters (1996). \emph{RiskMetrics---Technical Document},
+4th~ed. New York.
+
+\bibitem[Ryd\'en et al.(1998)]{ryden1998}
+Ryd\'en, T., Ter\"asvirta, T., \& \AA sbrink, S. (1998). Stylized facts of
+daily return series and the hidden Markov model. \emph{Journal of Applied
+Econometrics}, 13(3), 217--244.
+\end{thebibliography}
+
+\end{document}
