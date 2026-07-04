@@ -79,24 +79,28 @@ volatility feature supplied. Expected regime durations: 30–50 trading days.
 
 ![HMM states](figures/fig5_hmm_states.png)
 
-**Does it add out-of-sample value?** (`run_hmm_study.py`: expanding-window
-walk-forward, quarterly refits, 3,770 OOS days, QLIKE loss,
-Diebold-Mariano tests)
+**Does it add out-of-sample value? It depends on what you score.**
+(`run_full_study.py`: 3 assets — S&P 500, NASDAQ, WTI crude — 5 forecasters
+including GARCH(1,1), expanding-window walk-forward, 3,770–7,060 OOS days
+per asset, Diebold-Mariano / Kupiec / Christoffersen tests)
 
-| next-day vol forecaster | QLIKE (lower = better) | DM t vs EWMA |
-|---|---:|---:|
-| **EWMA(0.94), RiskMetrics 1994** | **−8.435** | — |
-| 21-day rolling | −8.378 | 4.1 |
-| HMM predictive mixture | −8.357 | 2.0 |
-| Rule-based regime vol | −8.350 | 2.7 |
+| scoring rule | winner | HMM's standing |
+|---|---|---|
+| variance point forecast (QLIKE) | **GARCH(1,1)**, EWMA close 2nd | loses on equities (DM t ≈ 2) |
+| full predictive density (log score) | GARCH on equities | ties EWMA on equities, **wins on WTI (t = −3.1)** |
+| **1% VaR calibration** (Kupiec) | **HMM** | lowest breach rate on all 3 assets; **only model anywhere with correct coverage** (WTI, p = 0.38) |
 
-**The honest headline: the one-parameter 1994 EWMA significantly beats the
-Baum-Welch machinery at next-day volatility forecasting.** A 10%-vol-target
-overlay (net of costs) improves Sharpe over buy-and-hold for *every*
-forecaster (0.38 → up to 0.51) and roughly halves drawdown — but the simplest
-forecasters do it best. Hidden Markov models earn their keep in *description*
-(economically meaningful states) and *simulation* (realistic tails), not in
-short-horizon forecasting. Sophistication is not edge.
+Every Gaussian forecaster over-breaches a 1% VaR by 50–160%. The HMM's
+fat-tailed mixture is the only one that gets the tail right — while losing
+the point-forecast race to a one-parameter 1994 filter. More states help:
+K=4 nearly closes the QLIKE gap and takes first place on density.
+Vol-target overlays raise equity Sharpe (0.38 → up to 0.64) and halve
+drawdowns, but no improvement survives a stationary-bootstrap test
+(min p = 0.10) — reported as the honest null it is.
+
+**The verdict: hidden Markov models are *risk* models — tails, densities,
+description — not point forecasters. Sophistication is not edge; it is
+insurance.**
 
 ## Honest limitations
 
