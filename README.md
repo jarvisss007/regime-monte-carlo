@@ -100,6 +100,18 @@ equity Sharpe under every forecaster; none survives a stationary-bootstrap
 test (min p = 0.09). On WTI the HMMs deliver the best-calibrated full
 densities in the study (Berkowitz p = 0.87/0.95).
 
+**The hybrid experiment (`run_hybrid_study.py`):** we then field the model
+these results nominate — **Markov-switching GARCH** (Haas–Mittnik–Paolella,
+from scratch in `src/msgarch.py`, verified by recovering a known simulated
+MS-GARCH). Verdict: **it closes both gaps and advances neither.**
+MS-GARCH-t is the first model to statistically tie GARCH-t on point
+forecasts everywhere (DM |t| ≤ 1.5; in all six model confidence sets, from
+which HMM-t is excluded 5 of 6 times), passes all three VaR levels on WTI
+(the only model to do so), and halves the HMM's 2008 crisis failure
+(6.7% → 3.6% breaches) while matching GARCH-t through COVID. But it beats
+GARCH-t nowhere. **Regime structure becomes free once tails are fat and
+variance adapts — it does not become profitable.**
+
 **The verdict: model the tail, and let the variance be recursive. Hidden
 states earn their keep in description — unsupervised discovery of the
 leverage effect, interpretable persistent regimes — not in prediction.
