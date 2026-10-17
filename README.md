@@ -106,10 +106,13 @@ from scratch in `src/msgarch.py`, verified by recovering a known simulated
 MS-GARCH). Verdict: **it closes both gaps and advances neither.**
 MS-GARCH-t is the first model to statistically tie GARCH-t on point
 forecasts everywhere (DM |t| ≤ 1.5; in all six model confidence sets, from
-which HMM-t is excluded 5 of 6 times), passes all three VaR levels on WTI
-(the only model to do so), and halves the HMM's 2008 crisis failure
-(6.7% → 3.6% breaches) while matching GARCH-t through COVID. But it beats
-GARCH-t nowhere. **Regime structure becomes free once tails are fat and
+which HMM-t is excluded 5 of 6 times), matches the t-pair's VaR coverage on
+WTI (GARCH-t, HMM-t and MS-GARCH-t are all Kupiec-accepted at 1% / 2.5% / 5%;
+it is not the only one, and MS-GARCH-t alone of the three fails Christoffersen
+independence at 1%, p = 0.0099 vs 0.074 for GARCH-t and 0.116 for HMM-t), and
+halves the HMM's 2008 crisis failure (6.7% → 3.6% breaches) while matching
+GARCH-t through COVID. But it beats GARCH-t nowhere — the t tail does the
+work; the regime switching adds description, not prediction. **Regime structure becomes free once tails are fat and
 variance adapts — it does not become profitable.**
 
 **The verdict: model the tail, and let the variance be recursive. Hidden
@@ -144,4 +147,4 @@ Data: S&P 500 daily closes bundled in the `arch` package — no API keys needed.
 - `src/regimes.py` — regime classification, transition matrix, stationary distribution
 - `src/simulate.py` — GBM benchmark and the regime-switching MC engine
 - `src/risk.py` — VaR/CVaR, drawdown distributions, stylized-facts validation
-- `run_simulation.py`, `plots.py` — the demo; `tests/` — 6 invariant tests
+- `run_simulation.py`, `plots.py` — the demo; `tests/` — 23 invariant tests

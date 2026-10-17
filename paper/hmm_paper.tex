@@ -61,9 +61,11 @@ test. Completing the arc, we field the hybrid these results motivate:
 Markov-switching GARCH \citep{haas2004} --- persistent hidden states, each
 carrying its own GARCH recursion. It becomes the first model in the study to
 join GARCH-$t$ in every model confidence set on every asset, matches the
-$t$-pair's tail calibration (it is the only model to pass all three VaR
-levels on WTI), and repairs roughly half of the HMM's 2008 breach
-failure --- but it nowhere \emph{beats} GARCH-$t$. Regime structure becomes
+$t$-pair's tail coverage (on WTI, GARCH-$t$, the $t$-HMM and MS-GARCH-$t$
+are all Kupiec-accepted at all three VaR levels; MS-GARCH-$t$ alone of the
+three fails the Christoffersen independence test, at 1\%), and repairs
+roughly half of the HMM's 2008 breach failure --- but it nowhere
+\emph{beats} GARCH-$t$. Regime structure becomes
 free once tails are fat and variance adapts; it does not become profitable.
 Sophistication is not edge; the useful sophistication is a fat-tailed
 innovation, and it is available for one extra parameter.
@@ -437,12 +439,16 @@ of six occasions. Once within-regime variance adapts, regime structure no
 longer costs accuracy. The three-state HMM's deficit was discreteness, not
 the hidden chain itself.
 
-\emph{Second, tail calibration matches the champion.} At the 1\% level
-MS-GARCH-$t$ passes Kupiec on WTI ($p=0.65$) alongside GARCH-$t$ and the
-$t$-HMM, and on WTI it is the only model in the study whose coverage is
-accepted at \emph{all three} VaR levels simultaneously (1\%/2.5\%/5\%:
-$p = 0.65/0.83/0.71$). Its ES ratios (1.04--1.10) sit in the calibrated
-band of the $t$ pair. A curiosity with theoretical content: on WTI even
+\emph{Second, tail coverage matches the champion; 1\% independence does
+not.} At the 1\% level MS-GARCH-$t$ passes Kupiec on WTI ($p=0.65$)
+alongside GARCH-$t$ and the $t$-HMM. All three are accepted at
+\emph{all three} VaR levels (Kupiec $p$ at 1\%/2.5\%/5\%: MS-GARCH-$t$
+$0.65/0.83/0.71$, GARCH-$t$ $0.98/0.60/0.32$, $t$-HMM $0.42/0.70/0.28$),
+so the hybrid is not unique here: the $t$ tail does the work, and the
+Markov switching adds description, not prediction. On the Christoffersen
+independence test it is the weakest of the three: at 1\% it fails
+($p=0.0099$) where GARCH-$t$ ($p=0.074$) and the $t$-HMM ($p=0.116$) pass.
+Its ES ratios (1.04--1.10) sit in the calibrated band of the $t$ pair. A curiosity with theoretical content: on WTI even
 MS-GARCH-\emph{Normal} attains correct 1\% coverage ($p=0.72$)---mixing
 Normals across regimes manufactures tail mass---but the substitute is
 partial, failing at 2.5\% and 5\% and on both equities. Regime-switching
