@@ -1,3 +1,5 @@
+> **CLOSED 2026-10-17 (LAB-001): results stand; no scheduled work.** Nothing runs on a schedule for this project and nothing will be maintained. The repo is kept as the record of what was built and found.
+
 # Regime-Switching Monte Carlo
 
 **📄 Working paper: [Do Hidden Markov Regimes Add Out-of-Sample Value?](paper/hmm_paper.pdf)**
